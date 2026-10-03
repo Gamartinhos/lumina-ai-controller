@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Lumina-AI | Controle de Luzes</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💡</text></svg>">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Post-processing (Bloom) — versões examples/js compatíveis com r128 -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/GammaCorrectionShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+</head>
+<body class="bg-black text-white antialiased">
+
+    <div class="app-wrapper">
+        <header style="padding: 12px 24px; background: rgba(15,17,21,0.95); border-bottom: 1px solid var(--panel-border); display: flex; justify-content: space-between; align-items: center;">
+            <div class="logo">
+                <div class="logo-icon"></div>
+                <h1>Lumina-AI</h1>
+            </div>
+            <div class="top-status-bar" style="margin-top: 0; display: flex; gap: 16px;">
+                <span class="status-led offline" id="ledLlm"><span class="led-dot"></span>LLM Local</span>
+                <span class="status-led offline" id="ledArtnet"><span class="led-dot"></span>Art-Net</span>
+                <span class="status-led offline" id="ledWs"><span class="led-dot"></span>Sync</span>
+                <span class="status-led" id="ledBeat" style="gap: 8px;"><span class="beat-indicator" id="beatDot"></span>Beat</span>
+            </div>
+        </header>
+
+        <div class="dashboard-layout">
+
+            
+            <!-- SIDEBAR -->
+            <aside class="sidebar" style="overflow-y: auto;">
+                <section class="panel emergency-panel">
+                    <h2>Ações Rápidas</h2>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <button class="btn" style="background: rgba(255,255,255,0.1); border: 1px dashed rgba(255,255,255,0.3);" onclick="if(window.pywebview && window.pywebview.api) { window.pywebview.api.open_terminal(); } else { alert('Recurso exclusivo do App Desktop Windows.'); }" data-tooltip="Abre o console de logs do servidor">💻 VER TERMINAL DO SERVIDOR</button>
+                        <button class="btn btn-blackout" onclick="sendAction('/api/blackout')" data-tooltip="Atalho: Espaço">BLACKOUT</button>
+                        <button class="btn btn-primary" onclick="toggleAutoDJ(this)">AUTO-DJ (SOM)</button>
+                        <button class="btn btn-flash" id="btnFlash" data-tooltip="Segure para Blinder (flash branco)"
+                            onmousedown="startFlash()" onmouseup="stopFlash()" onmouseleave="stopFlash()"
+                            ontouchstart="startFlash()" ontouchend="stopFlash()">⚡ FLASH / BLINDER</button>
+                        <button class="btn" id="btnBlind"
+                            onclick="toggleBlindMode(this)" data-tooltip="Programe cenas sem enviar sinal ao palco">🙈 MODO BLIND: OFF</button>
+                        <button class="btn" id="btnSoundLight"
+                            onclick="toggleSoundToLight(this)" data-tooltip="FFT do microfone: graves → pars, agudos → strobo dos movings">🎵 SOUND-TO-LIGHT: OFF</button>
+                        <button class="btn"
+                            onclick="openMidiModal()" data-tooltip="Mapear controlador MIDI físico (APC Mini, etc)">🎹 MIDI SETUP</button>
+                    </div>
+                    <!-- Medidores das bandas FFT -->
+                    <div class="fft-meters" data-tooltip="Energia das bandas: Graves / Médios / Agudos">
+                        <div class="fft-meter"><div class="fft-bar" id="meter_bass"></div><span>GRV</span></div>
+                        <div class="fft-meter"><div class="fft-bar" id="meter_mid"></div><span>MED</span></div>
+                        <div class="fft-meter"><div class="fft-bar" id="meter_high"></div><span>AGD</span></div>
+                    </div>
+                </section>
+
+                <!-- SUBMASTERS (Faders de grupo com HTP) -->
+                <section class="panel">
+                    <div style="display:flex; justify-content: space-between; align-items:center;">
+                        <h2>Submasters (HTP)</h2>
+                        <button class="btn" style="padding: 2px 8px; font-size: 0.7em; background: rgba(0,240,255,0.15); border: 1px solid rgba(0,240,255,0.3);"
+                            onclick="runAutoGroup()" data-tooltip="K-Means: agrupa as luzes automaticamente pela posição no palco">🧠 Auto-Group</button>
+                    </div>
+                    <div id="submastersContainer" class="submasters-row"></div>
+                </section>
+
+                <section class="panel colors-panel">
+                    <!-- Controles Manuais Avançados -->
+                    <div class="card">
+                        <h3>Controles Gerais</h3>
+                        <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 8px;">
+                            <div>
+                                <label style="font-size: 0.9em; display: flex; justify-content: space-between;">
+                                    <span>Dimmer Geral</span>
+                                    <span id="dimmerVal">100%</span>
+                                </label>
+                                <input type="range" min="0" max="255" value="255" style="width: 100%;" oninput="sendDimmer(this.value)">
+                            </div>
+                            <div>
+                                <label style="font-size: 0.9em; display: flex; justify-content: space-between;">
+                                    <span>Strobe Geral</span>
+                                    <span id="strobeVal">0</span>
+                                </label>
+                                <input type="range" min="0" max="255" value="0" style="width: 100%;" oninput="sendStrobe(this.value)">
+                            </div>
+                            <div>
+                                <label style="font-size: 0.9em; display: flex; justify-content: space-between;" data-tooltip="Escala a velocidade de todos os efeitos em execução">
+                                    <span>Master Speed</span>
+                                    <span id="masterSpeedVal">1.0x</span>
+                                </label>
+                                <input type="range" min="10" max="300" value="100" style="width: 100%;" oninput="sendMasterSpeed(this.value)">
+                            </div>
+                        </div>
+                    </div>
+
+                    <h2>Cores Fixas</h2>
+                    <div class="color-grid">
+                        <button class="color-btn" style="--bg: #ff2a2a; --glow: rgba(255,42,42,0.5);" onclick="sendColor(255, 0, 0)"></button>
+                        <button class="color-btn" style="--bg: #2aff2a; --glow: rgba(42,255,42,0.5);" onclick="sendColor(0, 255, 0)"></button>
+                        <button class="color-btn" style="--bg: #2a2aff; --glow: rgba(42,42,255,0.5);" onclick="sendColor(0, 0, 255)"></button>
+                        <button class="color-btn" style="--bg: #ff2aff; --glow: rgba(255,42,255,0.5);" onclick="sendColor(255, 0, 255)"></button>
+                        <button class="color-btn" style="--bg: #ffff2a; --glow: rgba(255,255,42,0.5);" onclick="sendColor(255, 255, 0)"></button>
+                        <button class="color-btn" style="--bg: #ffffff; --glow: rgba(255,255,255,0.5);" onclick="sendColor(255, 255, 255)"></button>
+                    </div>
+
+                    <h2>Color Wheel</h2>
+                    <div id="colorWheelWrapper">
+                        <canvas id="colorWheel" width="150" height="150"></canvas>
+                    </div>
+
+                    <h2>Formas (Moving Heads)</h2>
+                    <div style="display:flex; gap:8px;">
+                        <button class="btn" style="flex:1; background: rgba(255,255,255,0.05); font-size:0.85em; padding:10px;" onclick="sendShape('circle')">⭕ Círculo</button>
+                        <button class="btn" style="flex:1; background: rgba(255,255,255,0.05); font-size:0.85em; padding:10px;" onclick="sendShape('figure8')">∞ Fig. 8</button>
+                        <button class="btn" style="flex:1; background: rgba(255,255,255,0.05); font-size:0.85em; padding:10px;" onclick="sendShape('sweep')">↔ Varredura</button>
+                    </div>
+                </section>
+
+                <section class="panel ai-buttons-panel">
+                    <h2>Meus Efeitos & Cenas</h2>
+                    <div id="aiButtonsContainer" style="display: flex; flex-direction: column; gap: 8px;">
+                        <small style="color: var(--text-muted);">Peça para a IA criar um botão de efeito no chat!</small>
+                    </div>
+                </section>
+            </aside>
+
+            <!-- ÁREA PRINCIPAL -->
+            <main class="main-content" style="flex: 1; display: flex; flex-direction: column; overflow-y: auto;">
+                
+                <div style="display: flex; justify-content: flex-end;">
+                    <button class="btn btn-primary btn-toggle-view" onclick="toggleMainArea()" id="btnToggleMain">▶ Abrir Sequencer & XY Pad</button>
+                </div>
+
+                <!-- MAPA DO PALCO -->
+                <section class="panel map-panel" id="mapPanelSection" style="flex: 1 0 400px; flex-direction: column; display: flex;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <div>
+                            <h2 id="mainAreaTitle">Planta do Palco (Visão Frontal)</h2>
+                            <small id="mainAreaSubtitle" style="color: var(--text-muted);">Arraste as luzes para corrigir as posições físicas delas no bar.</small>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn" id="btnToggle3D" style="font-size: 0.8em; padding: 4px 8px; background: rgba(0,240,255,0.15); border: 1px solid rgba(0,240,255,0.3);" onclick="toggleStage3D()" data-tooltip="Visualizador 3D com feixes de luz (estilo QLC+)">🧊 Visão 3D</button>
+                            <button class="btn btn-primary" id="btnPatch" style="font-size: 0.8em; padding: 4px 8px;" onclick="openPatchModal()">🔧 Patch Fixtures</button>
+                            <button class="btn" style="font-size: 0.8em; padding: 4px 8px; background: rgba(0,240,255,0.15); border: 1px solid rgba(0,240,255,0.3);" onclick="openBuilderModal()">🛠 Criar Fixture</button>
+                            <label class="btn" id="btnBgUpload" style="cursor: pointer; font-size: 0.8em; padding: 4px 8px; background: rgba(255,255,255,0.1);">
+                                Subir Fundo
+                                <input type="file" id="bgUpload" accept="image/*" style="display: none;" onchange="uploadBackground(event)">
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="stage-wrapper" style="flex: 1; position: relative; min-height: 300px; width: 100%;">
+                        <div class="stage-map" id="stageMap" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-image: url('bg.jpg'); background-size: contain; background-repeat: no-repeat; background-position: center; border-radius: 8px; overflow: hidden;">
+                            <canvas id="stageMapCanvas"></canvas>
+                        </div>
+                        <div id="stage3d" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 8px; overflow: hidden; cursor: grab;"></div>
+                    </div>
+                </section>
+
+                <!-- CONTROLE MANUAL E SEQUENCIADOR -->
+                <div class="panel" id="manualControlArea" style="flex: none; flex-direction: row; gap: 16px; min-height: 400px; display: none;">
+                    <!-- XY PAD -->
+                    <div style="flex: 1; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 8px; display: flex; flex-direction: column; padding: 16px;">
+                        <h3>XY Pad (Pan & Tilt)</h3>
+                        <div style="margin-bottom: 8px; font-size: 0.9em; display: flex; align-items: center; gap: 8px;">
+                            <span>Fixture:</span> 
+                            <select id="manualFixtureSelect" class="chat-input" style="flex: 1;" onchange="updateXYFromFixture()"></select>
+                        </div>
+                        <div id="xyPadContainer" style="flex: 1; position: relative; border: 1px dashed rgba(255,255,255,0.3); background: #000; overflow: hidden; cursor: crosshair;" onmousedown="startPanTiltDrag(event)" onmousemove="doPanTiltDrag(event)" onmouseup="stopPanTiltDrag(event)" onmouseleave="stopPanTiltDrag(event)">
+                            <div id="xyCrosshairX" style="position: absolute; width: 100%; height: 1px; background: rgba(0, 240, 255, 0.4); top: 50%; left: 0; pointer-events: none;"></div>
+                            <div id="xyCrosshairY" style="position: absolute; width: 1px; height: 100%; background: rgba(0, 240, 255, 0.4); left: 50%; top: 0; pointer-events: none;"></div>
+                            <div id="xyCursor" style="position: absolute; width: 16px; height: 16px; background: var(--primary, #00f0ff); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; left: 50%; top: 50%; box-shadow: 0 0 8px var(--primary, #00f0ff);"></div>
+                        </div>
+                        <div style="display: flex; gap: 8px; margin-top: 8px; font-size: 0.9em; justify-content: center; color: var(--text-muted);">
+                            <span id="xyVal">Pan: 127 | Tilt: 127</span>
+                        </div>
+                        <!-- Ajuste fino (nudges) + Home/Center -->
+                        <div class="xy-controls">
+                            <div class="xy-nudge-group">
+                                <span class="xy-nudge-label">Pan</span>
+                                <button class="btn xy-btn" onclick="nudgePanTilt(-1, 0)" data-tooltip="Pan -1">−</button>
+                                <button class="btn xy-btn" onclick="nudgePanTilt(1, 0)" data-tooltip="Pan +1">+</button>
+                            </div>
+                            <button class="btn xy-btn xy-center-btn" onclick="centerPanTilt()" data-tooltip="Centraliza Pan/Tilt (127/127)">⌂ Centro</button>
+                            <div class="xy-nudge-group">
+                                <span class="xy-nudge-label">Tilt</span>
+                                <button class="btn xy-btn" onclick="nudgePanTilt(0, -1)" data-tooltip="Tilt -1">−</button>
+                                <button class="btn xy-btn" onclick="nudgePanTilt(0, 1)" data-tooltip="Tilt +1">+</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- TIMELINE (Sequenciador visual estilo editor de vídeo) -->
+                    <div style="flex: 1.4; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 8px; display: flex; flex-direction: column; padding: 16px;">
+                        <div style="display:flex; justify-content: space-between; align-items:center;">
+                            <h3>Timeline Sequencer</h3>
+                            <small id="timelineInfo" style="color: var(--text-muted);">0 passos</small>
+                        </div>
+
+                        <!-- Trilha horizontal com blocos arrastáveis -->
+                        <div id="timelineTrack" class="timeline-track"></div>
+
+                        <!-- Editor granular do passo selecionado -->
+                        <div id="stepEditor" class="step-editor" style="display: none;">
+                            <label>Fade (ms): <input type="number" id="editFade" class="chat-input" style="width: 70px; padding: 2px;" onchange="applyStepEdit()"></label>
+                            <label>Hold (ms): <input type="number" id="editHold" class="chat-input" style="width: 70px; padding: 2px;" onchange="applyStepEdit()"></label>
+                            <div class="step-editor-colors">
+                                <button class="color-dot" style="--c:#ff2a2a;" onclick="applyColorToStep(255,0,0)"></button>
+                                <button class="color-dot" style="--c:#2aff2a;" onclick="applyColorToStep(0,255,0)"></button>
+                                <button class="color-dot" style="--c:#2a2aff;" onclick="applyColorToStep(0,0,255)"></button>
+                                <button class="color-dot" style="--c:#ff2aff;" onclick="applyColorToStep(255,0,255)"></button>
+                                <button class="color-dot" style="--c:#ffffff;" onclick="applyColorToStep(255,255,255)"></button>
+                            </div>
+                            <button class="btn" style="padding: 2px 8px; font-size: 0.75em; background: rgba(255,255,255,0.08);" onclick="duplicateSelectedStep()">⧉ Duplicar</button>
+                            <button class="btn" style="padding: 2px 8px; font-size: 0.75em; background: rgba(255,0,0,0.2); color: #ff6b6b;" onclick="deleteSelectedStep()">🗑 Excluir</button>
+                        </div>
+
+                        <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center; flex-wrap: wrap;">
+                            <label style="font-size: 0.8em; color: var(--text-muted);">Hold:</label>
+                            <input type="number" id="stepTime" class="chat-input" value="500" style="width: 65px; padding: 4px; text-align: center;">
+                            <label style="font-size: 0.8em; color: var(--text-muted);">Fade:</label>
+                            <input type="number" id="stepFade" class="chat-input" value="0" style="width: 65px; padding: 4px; text-align: center;">
+                            <button class="btn btn-primary" onclick="addTimelineStep()" style="flex: 1;">+ Capturar Passo</button>
+                        </div>
+                        <div style="display: flex; gap: 8px; margin-top: 8px;">
+                            <input type="text" id="seqName" class="chat-input" placeholder="Nome da Cena" style="flex: 1; padding: 4px;">
+                            <button id="tlPlayBtn" class="btn" style="background: rgba(255,255,255,0.08); min-width: 36px;" onclick="previewTimeline()" title="Preview (uma passagem)">▶</button>
+                            <button class="btn" style="background: rgba(255,255,255,0.08); min-width: 36px;" onclick="loopTimeline()" title="Loop contínuo (clique de novo para parar)">↺</button>
+                            <button class="btn" style="background: rgba(255,255,255,0.08);" onclick="stopTimeline(); clearTimeline();" data-tooltip="Parar e limpar timeline / sair da edição">✕</button>
+                            <button class="btn btn-send" onclick="saveTimeline()">Salvar</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CHAT -->
+                <section class="panel chat-panel" style="margin-top: 16px; flex: none;">
+                    <div style="display:flex; justify-content: space-between; align-items:center;">
+                        <h2>Assistente Lumina-AI</h2>
+                        <button class="btn" style="padding: 4px 10px; font-size: 0.75em; background: rgba(255,255,255,0.06);" onclick="undoLastAiAction()" data-tooltip="Desfaz a última ação da IA">↩ Oops (Undo)</button>
+                    </div>
+                    <div class="chat-box" id="chatBox" style="flex: 1; min-height: 150px;">
+                        <div class="message ai-msg">
+                            Olá! Eu sou o assistente virtual do seu Bar (rodando localmente via LLM). Peça para eu acender as luzes, fazer efeitos, e até salvar botões na barra lateral!
+                        </div>
+                    </div>
+                    <div class="chat-input-wrapper">
+                        <input type="text" id="chatInput" placeholder="Ex: Pisca tudo em vermelho e azul rápido e salva num botão..." onkeypress="handleChatEnter(event)">
+                        <button class="btn btn-send" onclick="sendChatMessage()">ENVIAR</button>
+                    </div>
+                </section>
+            </main>
+
+        </div>
+    </div>
+
+    <div id="toastContainer"></div>
+
+    <!-- MODAL DE CONTROLE DE FIXTURE INDIVIDUAL -->
+    <div id="fixtureModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
+        <div style="background: var(--panel-bg); border: 1px solid var(--panel-border); padding: 24px; border-radius: 8px; width: 400px; display: flex; flex-direction: column; gap: 16px;">
+            <h2 id="fixtureModalTitle">Controle Individual</h2>
+            
+            <label style="font-size: 0.9em; display: flex; justify-content: space-between;">
+                <span>Dimmer</span>
+                <span id="fixDimmerVal">255</span>
+            </label>
+            <input type="range" id="fixDimmer" min="0" max="255" value="255" style="width: 100%;" oninput="document.getElementById('fixDimmerVal').innerText = this.value">
+            
+            <label style="font-size: 0.9em; display: flex; justify-content: space-between;">
+                <span>Vermelho (R)</span>
+                <span id="fixRVal">255</span>
+            </label>
+            <input type="range" id="fixR" min="0" max="255" value="255" style="width: 100%;" oninput="document.getElementById('fixRVal').innerText = this.value">
+            
+            <label style="font-size: 0.9em; display: flex; justify-content: space-between;">
+                <span>Verde (G)</span>
+                <span id="fixGVal">255</span>
+            </label>
+            <input type="range" id="fixG" min="0" max="255" value="255" style="width: 100%;" oninput="document.getElementById('fixGVal').innerText = this.value">
+            
+            <label style="font-size: 0.9em; display: flex; justify-content: space-between;">
+                <span>Azul (B)</span>
+                <span id="fixBVal">255</span>
+            </label>
+            <input type="range" id="fixB" min="0" max="255" value="255" style="width: 100%;" oninput="document.getElementById('fixBVal').innerText = this.value">
+            
+            <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                <button class="btn" style="background: transparent; border: 1px solid var(--text-muted);" onclick="closeFixtureModal()">Cancelar</button>
+                <button class="btn btn-primary" onclick="submitFixtureColor()">Aplicar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DE PATCH -->
+    <div id="patchModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
+        <div style="background: var(--panel-bg); border: 1px solid var(--panel-border); padding: 24px; border-radius: 8px; width: 400px; display: flex; flex-direction: column; gap: 16px;">
+            <h2>🔧 Adicionar Fixture</h2>
+            <p style="font-size: 0.9em; color: var(--text-muted);">Selecione um arquivo .fxt da pasta Fixture. O endereçamento DMX será calculado automaticamente.</p>
+            
+            <label>Arquivo FXT:
+                <select id="fxtSelect" class="chat-input" style="width: 100%; margin-top: 4px;"></select>
+            </label>
+            
+            <label>Quantidade:
+                <input type="number" id="fxtQuantity" class="chat-input" value="1" min="1" max="100" style="width: 100%; margin-top: 4px;">
+            </label>
+            
+            <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                <button class="btn" style="background: transparent; border: 1px solid var(--text-muted);" onclick="closePatchModal()">Cancelar</button>
+                <button class="btn btn-primary" onclick="submitPatch()">Patch Automático</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- MODAL MIDI SETUP -->
+    <div id="midiModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
+        <div style="background: var(--panel-bg); border: 1px solid var(--panel-border); padding: 24px; border-radius: 8px; width: 440px; max-height: 80vh; display: flex; flex-direction: column; gap: 12px;">
+            <h2>🎹 MIDI Setup (Web MIDI)</h2>
+            <p style="font-size: 0.85em; color: var(--text-muted);">Clique em <b>Learn</b> numa ação e aperte o botão/fader do seu controlador (ex: AKAI APC Mini). Notas = botões, CC = faders. Mapeamentos ficam salvos neste navegador.</p>
+            <div id="midiActionsList" style="overflow-y: auto; flex: 1;"></div>
+            <div style="display: flex; justify-content: flex-end;">
+                <button class="btn btn-primary" onclick="closeMidiModal()">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL FIXTURE BUILDER -->
+    <div id="builderModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
+        <div style="background: var(--panel-bg); border: 1px solid var(--panel-border); padding: 24px; border-radius: 8px; width: 560px; max-height: 85vh; display: flex; flex-direction: column; gap: 12px;">
+            <h2>🛠 Fixture Builder</h2>
+            <p style="font-size: 0.85em; color: var(--text-muted);">Crie um aparelho DMX do zero: arraste os canais da paleta para a lista. A posição na lista define o canal (1, 2, 3...). Salva direto no <code>fixtures.json</code>.</p>
+            <div style="display: flex; gap: 8px;">
+                <label style="flex: 1;">ID (ex: PAR_LED_7CH):
+                    <input type="text" id="builderId" class="chat-input" style="width: 100%; margin-top: 4px;">
+                </label>
+                <label style="flex: 1;">Nome:
+                    <input type="text" id="builderName" class="chat-input" style="width: 100%; margin-top: 4px;">
+                </label>
+            </div>
+            <div style="display: flex; gap: 12px; flex: 1; min-height: 220px;">
+                <div style="flex: 1;">
+                    <h3 style="font-size: 0.85em;">Paleta de Canais</h3>
+                    <div id="builderPalette" class="builder-palette"></div>
+                </div>
+                <div style="flex: 1;">
+                    <h3 style="font-size: 0.85em;">Canais do Aparelho (<span id="builderTotal">0</span>)</h3>
+                    <div id="builderSlots" class="builder-slots"></div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                <button class="btn" style="background: transparent; border: 1px solid var(--text-muted);" onclick="closeBuilderModal()">Cancelar</button>
+                <button class="btn btn-primary" onclick="submitBuilder()">Criar Fixture</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script src="3dview.js"></script>
+    <script src="realtime.js"></script>
+    <script src="midi.js"></script>
+    <script src="soundlight.js"></script>
+    <script src="timeline.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+graphify-out/
+.pytest_cache/
+venv/
+.venv/
+env/
+Lumina-AI-Linux-Installer.zip

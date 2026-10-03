@@ -1,0 +1,108 @@
+{
+  "fixtures": [
+    {
+      "id": "par_chao_esq",
+      "label": "Mega Par Chão Esquerdo",
+      "type": "MEGA_PAR_54",
+      "dmx_start": 1,
+      "position": {
+        "x": -3.319616874373603,
+        "y": -0.08411823941943175,
+        "z": 0.0
+      },
+      "groups": [
+        "Pista",
+        "mega_par",
+        "todos",
+        "auto_pista_1"
+      ]
+    },
+    {
+      "id": "par_chao_dir",
+      "label": "Mega Par Chão Direito",
+      "type": "MEGA_PAR_54",
+      "dmx_start": 9,
+      "position": {
+        "x": 3.3888483357727175,
+        "y": -0.06419212958325371,
+        "z": 0.0
+      },
+      "groups": [
+        "Pista",
+        "mega_par",
+        "todos",
+        "auto_pista_1"
+      ]
+    },
+    {
+      "id": "par_alto_esq",
+      "label": "Mega Par Alto Esquerdo",
+      "type": "MEGA_PAR_54",
+      "dmx_start": 17,
+      "position": {
+        "x": 3.053763573936342,
+        "y": -0.9119252904640596,
+        "z": 3.0
+      },
+      "groups": [
+        "Palco",
+        "mega_par",
+        "todos",
+        "auto_aereo_1"
+      ]
+    },
+    {
+      "id": "par_alto_dir",
+      "label": "Mega Par Alto Direito",
+      "type": "MEGA_PAR_54",
+      "dmx_start": 25,
+      "position": {
+        "x": -3.7707518856341133,
+        "y": -1.337063936590911,
+        "z": 3.0
+      },
+      "groups": [
+        "Palco",
+        "mega_par",
+        "todos",
+        "auto_aereo_1"
+      ]
+    },
+    {
+      "id": "moving_esq",
+      "label": "Mini Moving Esquerdo",
+      "type": "MINI_MOVING_60W",
+      "dmx_start": 33,
+      "position": {
+        "x": 2.366227784653292,
+        "y": 5.0,
+        "z": 3.0
+      },
+      "groups": [
+        "Aereo",
+        "Movings",
+        "moving",
+        "todos",
+        "auto_aereo_2"
+      ]
+    },
+    {
+      "id": "moving_dir",
+      "label": "Mini Moving Direito",
+      "type": "MINI_MOVING_60W",
+      "dmx_start": 45,
+      "position": {
+        "x": -2.4308906221260473,
+        "y": 3.6802695692970633,
+        "z": 3.0
+      },
+      "groups": [
+        "Aereo",
+        "Movings",
+        "moving",
+        "todos",
+        "auto_aereo_2"
+      ]
+    }
+  ]
+}

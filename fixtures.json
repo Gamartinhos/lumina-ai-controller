@@ -1,0 +1,39 @@
+{
+  "MEGA_PAR_54": {
+    "name": "MEGA PAR 54 8 CANAIS",
+    "total_channels": 8,
+    "channels": {
+      "dimmer": 1,
+      "strobe": 2,
+      "red": 3,
+      "green": 4,
+      "blue": 5,
+      "amber": 6,
+      "effects": 7,
+      "speed": 8
+    }
+  },
+  "MINI_MOVING_60W": {
+    "name": "Mini mooving head 60w",
+    "total_channels": 12,
+    "channels": {
+      "pan": 1,
+      "pan_fine": 2,
+      "tilt": 3,
+      "tilt_fine": 4,
+      "color": 5,
+      "gobo": 6,
+      "strobe": 7,
+      "dimmer": 8,
+      "speed": 9,
+      "auto": 10,
+      "reset": 11,
+      "color2": 12
+    }
+  },
+  "DUMMY": {
+    "name": "Dummy",
+    "total_channels": 1,
+    "channels": {}
+  }
+}
